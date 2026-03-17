@@ -1,2 +1,0 @@
-# Sahovat24_Bot
-
