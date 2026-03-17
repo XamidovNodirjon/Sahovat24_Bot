@@ -326,16 +326,7 @@ class CallbackHandler
                 $offset = (int) $parts[3];
             }
             $limit = 2;
-
-            Telegram::editMessageText([
-                'chat_id' => $chatId,
-                'message_id' => $messageId,
-                'text' => $user->language == 'uz' ? "⏳ Yuklanmoqda..." : "⏳ Загрузка..."
-            ]);
-
             if ($isNearby) {
-                // If it's nearby pagination, we need lat/lng from the user's last interaction
-                // User model should have latitude and longitude columns saved during `browsing_location`
                 $lat = $user->latitude;
                 $lng = $user->longitude;
                 if (!$lat || !$lng) {
@@ -345,11 +336,13 @@ class CallbackHandler
                     ]);
                     return;
                 }
-                // Fetch limit + 1 to check if there is a next page
-                $products = $this->productRepository->getNearbyByCategory($categoryId, $lat, $lng, 3, $offset, $limit + 1);
+                $products = $this->productRepository->getNearbyByCategory($categoryId, $lat, $lng, 50, $offset, $limit + 1);
             } else {
                 $products = $this->productRepository->getAllByCategory($categoryId, $offset, $limit + 1);
             }
+
+            // Acknowledge callback immediately to stop spinner
+            Telegram::answerCallbackQuery(['callback_query_id' => $callbackQuery->getId()]);
 
             if ($products->isEmpty()) {
                 $emptyMsg = $user->language == 'uz'
@@ -380,6 +373,18 @@ class CallbackHandler
                         }
                         if (!empty($buttons)) {
                             $keyboard = [$buttons];
+                            
+                            // Remove buttons from the PREVIOUS message (the one clicked)
+                            // We do this inside a try-catch because it might already be deleted or of a wrong type
+                            try {
+                                Telegram::editMessageReplyMarkup([
+                                    'chat_id'    => $chatId,
+                                    'message_id' => $messageId,
+                                    'reply_markup' => json_encode(['inline_keyboard' => []])
+                                ]);
+                            } catch (\Exception $e) {
+                                // Silent fail if cannot edit keyboard
+                            }
                         }
                     }
 
