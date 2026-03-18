@@ -30,8 +30,8 @@ class MessageHandler
         $contact = $message->getContact();
 
         if ($text == '/start') {
-            if ($user->phone_number) {
-                // If the user already has a phone number, they are fully registered
+            if ($user->language) {
+                // If the user already has a language, they can see the menu (phone number is only for posting)
                 $this->userService->setStep($user->telegram_id, 'main_menu');
                 $this->sendMainMenu($chatId, $user->language);
                 return;
