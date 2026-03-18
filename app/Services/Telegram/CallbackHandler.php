@@ -491,7 +491,7 @@ class CallbackHandler
             if (!empty($fullKeyboard)) {
                 Telegram::sendMessage([
                     'chat_id'      => $chatId,
-                    'text'         => $lang == 'uz' ? "📋 Amallar:" : "📋 Действия:",
+                    'text'         => '·',
                     'reply_markup' => json_encode(['inline_keyboard' => $fullKeyboard]),
                 ]);
             }
