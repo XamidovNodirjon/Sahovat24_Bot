@@ -108,7 +108,12 @@ class CallbackHandler
         } elseif ($data === 'ownership_yes' || $data === 'ownership_no') {
             $isOwner = $data === 'ownership_yes';
 
-            // Find the pending draft (status is still 'draft' here)
+            // Acknowledge callback immediately to stop the button spinner
+            try {
+                Telegram::answerCallbackQuery(['callback_query_id' => $callbackQuery->getId()]);
+            } catch (\Exception $e) { /* silent */ }
+
+            // Find the pending draft
             $product = $this->productRepository->findPendingDraftByUser($user->id);
 
             $this->userService->setStep($user->telegram_id, 'main_menu');
@@ -122,18 +127,29 @@ class CallbackHandler
                     ]);
                 }
 
-                Telegram::editMessageText([
-                    'chat_id'    => $chatId,
-                    'message_id' => $messageId,
-                    'text'       => $user->language == 'uz' ? "✅ Mualliflik tasdiqlandi!" : "✅ Авторство подтверждено!",
-                ]);
+                // Edit the confirmation message (wrapped in try-catch for 'not modified' errors)
+                try {
+                    Telegram::editMessageText([
+                        'chat_id'    => $chatId,
+                        'message_id' => $messageId,
+                        'text'       => $user->language == 'uz' ? "✅ Mualliflik tasdiqlandi!" : "✅ Авторство подтверждено!",
+                    ]);
+                } catch (\Exception $e) { /* silent */ }
 
                 $successMsg = $user->language == 'uz'
                     ? "🎉 E'loningiz muvaffaqiyatli joylashtirildi!\nBoshqalar uni 'Barcha e'lonlar' bo'limida ko'ra oladi."
                     : "🎉 Ваше объявление успешно опубликовано!\nДругие могут увидеть его в разделе 'Все объявления'.";
 
                 Telegram::sendMessage(['chat_id' => $chatId, 'text' => $successMsg]);
-                $this->sendProductCard($chatId, $product, $user->language);
+
+                // Show product card — wrapped in try-catch so failures don't crash the flow
+                if ($product) {
+                    try {
+                        $this->sendProductCard($chatId, $product, $user->language);
+                    } catch (\Exception $e) {
+                        \Log::warning('sendProductCard failed: ' . $e->getMessage());
+                    }
+                }
             } else {
                 // NOT owner — delete the product entirely
                 if ($product) {
@@ -141,11 +157,13 @@ class CallbackHandler
                     $product->delete();
                 }
 
-                Telegram::editMessageText([
-                    'chat_id'    => $chatId,
-                    'message_id' => $messageId,
-                    'text'       => $user->language == 'uz' ? "❌ E'lon bekor qilindi." : "❌ Объявление отменено.",
-                ]);
+                try {
+                    Telegram::editMessageText([
+                        'chat_id'    => $chatId,
+                        'message_id' => $messageId,
+                        'text'       => $user->language == 'uz' ? "❌ E'lon bekor qilindi." : "❌ Объявление отменено.",
+                    ]);
+                } catch (\Exception $e) { /* silent */ }
 
                 $warnMsg = $user->language == 'uz'
                     ? "⚠️ Faqat o'zingizning mahsulotlaringizni kira olasiz.\nBoshqaning narsasini e'lon qilish taqiqlangan."
@@ -457,10 +475,10 @@ class CallbackHandler
                 $media[] = $item;
             }
 
-            // SDK expects a plain PHP array for 'media', NOT json_encode()
+            // Telegram API requires 'media' as a JSON-encoded string
             Telegram::sendMediaGroup([
                 'chat_id' => $chatId,
-                'media'   => $media,
+                'media'   => json_encode($media),
             ]);
 
             // MediaGroup does not support reply_markup — send buttons separately

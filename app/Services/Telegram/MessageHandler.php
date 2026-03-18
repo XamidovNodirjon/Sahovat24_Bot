@@ -472,10 +472,10 @@ class MessageHandler
                 $media[] = $item;
             }
 
-            // SDK expects a plain PHP array for 'media', NOT json_encode()
+            // Telegram API requires 'media' as a JSON-encoded string
             Telegram::sendMediaGroup([
                 'chat_id' => $chatId,
-                'media'   => $media,
+                'media'   => json_encode($media),
             ]);
 
             // MediaGroup does not support reply_markup — send buttons separately
