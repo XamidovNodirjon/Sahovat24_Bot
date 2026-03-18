@@ -9,7 +9,7 @@ use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use App\Models\Advertisement;
-use Filament\Tables\Actions\Action;
+use Filament\Actions\Action;
 
 class AdvertisementsTable
 {
