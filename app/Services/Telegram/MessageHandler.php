@@ -447,19 +447,15 @@ class MessageHandler
                 : "🗺 <a href='{$mapsUrl}'>Посмотреть на карте</a>") . "\n";
         }
 
-        // Build contact inline button (more reliable than tg:// link in caption)
-        $contactKeyboard = [];
+        // Contact link via Telegram profile (Back in caption as requested)
         if ($product->user && $product->user->telegram_id) {
-            $contactBtn = $lang == 'uz' ? "📞 Bog'lanish" : "📞 Связаться";
-            $contactKeyboard[] = [
-                ['text' => $contactBtn, 'url' => "tg://user?id=" . $product->user->telegram_id]
-            ];
+            $contactUrl = "tg://user?id=" . $product->user->telegram_id;
+            $caption .= ($lang == 'uz'
+                ? "👤 <a href='{$contactUrl}'>Bog'lanish</a>"
+                : "👤 <a href='{$contactUrl}'>Связаться</a>") . "\n";
         }
 
-        // Merge contact row with any pagination/action keyboard
-        $fullKeyboard = array_merge($contactKeyboard, $keyboard ?? []);
-
-        // Use ->values() to ensure $index is always 0-based (not database ID)
+        // Use ->values() to ensure $index is always 0-based
         $images = $product->images->values();
 
         if ($images->count() > 1) {
@@ -484,12 +480,12 @@ class MessageHandler
                 'media'   => json_encode($media),
             ]);
 
-            // MediaGroup does not support reply_markup — send buttons separately (contact + actions)
-            if (!empty($fullKeyboard)) {
+            // Only send second message if there are action/pagination buttons
+            if ($keyboard) {
                 Telegram::sendMessage([
                     'chat_id'      => $chatId,
-                    'text'         => '·',
-                    'reply_markup' => json_encode(['inline_keyboard' => $fullKeyboard]),
+                    'text'         => '·', // Minimal placeholder for keyboard
+                    'reply_markup' => json_encode(['inline_keyboard' => $keyboard]),
                 ]);
             }
         } elseif ($images->count() === 1) {
