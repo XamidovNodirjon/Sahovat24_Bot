@@ -73,6 +73,22 @@ class MessageHandler
                 break;
             case 'main_menu':
                 if ($text === "📝 E'lon berish" || $text === "📝 Подать объявление") {
+                    if (!$user->phone_number) {
+                        $this->userService->setStep($user->telegram_id, 'asking_for_phone');
+                        $msg = $user->language == 'uz' ? "E'lon berish uchun iltimos telefon raqamingizni yuboring:" : "Для подачи объявления, пожалуйста, отправьте свой номер телефона:";
+                        $btnText = $user->language == 'uz' ? "📞 Raqamni yuborish" : "📞 Отправить номер";
+                        Telegram::sendMessage([
+                            'chat_id' => $chatId,
+                            'text' => $msg,
+                            'reply_markup' => json_encode([
+                                'keyboard' => [[['text' => $btnText, 'request_contact' => true]]],
+                                'resize_keyboard' => true,
+                                'one_time_keyboard' => true
+                            ])
+                        ]);
+                        return;
+                    }
+
                     $this->userService->setStep($user->telegram_id, 'choosing_category');
                     
                     $categories = $this->categoryRepository->getParents();
@@ -285,14 +301,17 @@ class MessageHandler
                     $msgUz = "❓ Bu mahsulot sizniki ekanligini tasdiqlaysizmi?\n\n« Bu tasdiqlash mualliflik huquqini beradi. »";
                     $msgRu = "❓ Подтверждаете ли, что этот товар ваш?\n\n« Это подтверждение даёт право авторства. »";
 
+                    $btnYes = $user->language == 'uz' ? "✅ Ha, meniki" : "✅ Да, моё";
+                    $btnNo  = $user->language == 'uz' ? "❌ Yo'q, meniki emas" : "❌ Нет, не моё";
+
                     Telegram::sendMessage([
                         'chat_id'      => $chatId,
                         'text'         => $user->language == 'uz' ? $msgUz : $msgRu,
                         'reply_markup' => json_encode([
                             'inline_keyboard' => [
                                 [
-                                    ['text' => "✅ Ha, meniki",     'callback_data' => 'ownership_yes'],
-                                    ['text' => "❌ Yo'q, meniki emas", 'callback_data' => 'ownership_no'],
+                                    ['text' => $btnYes, 'callback_data' => 'ownership_yes'],
+                                    ['text' => $btnNo,  'callback_data' => 'ownership_no'],
                                 ]
                             ]
                         ])
@@ -412,7 +431,6 @@ class MessageHandler
             : ($lang == 'uz' ? 'Tekin 🎁' : 'Бесплатно 🎁');
 
         $caption  = "📌 <b>{$product->title}</b>\n";
-        $caption .= "────────\n";
         $caption .= ($lang == 'uz' ? '💰 Narx: ' : '💰 Цена: ') . $price . "\n";
 
         if ($distanceKm !== null) {
@@ -426,12 +444,46 @@ class MessageHandler
                 : "🗺 <a href='{$mapsUrl}'>Посмотреть на карте</a>") . "\n";
         }
 
-        $img = $product->images()->first();
+        // Contact link (Telegram Profile)
+        if ($product->user && $product->user->telegram_id) {
+            $contactUrl = "tg://user?id=" . $product->user->telegram_id;
+            $caption .= ($lang == 'uz'
+                ? "👤 <a href='{$contactUrl}'>Bog'lanish</a>"
+                : "👤 <a href='{$contactUrl}'>Связаться</a>") . "\n";
+        }
 
-        if ($img) {
+        $images = $product->images;
+
+        if ($images->count() > 1) {
+            // Send MediaGroup for multiple images
+            $media = [];
+            foreach ($images as $index => $img) {
+                $media[] = [
+                    'type' => 'photo',
+                    'media' => $img->file_id,
+                    'caption' => $index === 0 ? $caption : '',
+                    'parse_mode' => 'HTML',
+                ];
+            }
+
+            Telegram::sendMediaGroup([
+                'chat_id' => $chatId,
+                'media' => json_encode($media),
+            ]);
+
+            // MediaGroup doesn't support reply_markup, send keyboard separately if exists
+            if ($keyboard) {
+                Telegram::sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => $lang == 'uz' ? "Amallar:" : "Действия:",
+                    'reply_markup' => json_encode(['inline_keyboard' => $keyboard]),
+                ]);
+            }
+        } elseif ($images->count() === 1) {
+            // Single photo
             $params = [
                 'chat_id'    => $chatId,
-                'photo'      => $img->file_id,
+                'photo'      => $images->first()->file_id,
                 'caption'    => $caption,
                 'parse_mode' => 'HTML',
             ];
@@ -440,6 +492,7 @@ class MessageHandler
             }
             Telegram::sendPhoto($params);
         } else {
+            // No photo
             $params = [
                 'chat_id'    => $chatId,
                 'text'       => $caption,

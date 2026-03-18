@@ -32,17 +32,15 @@ class CallbackHandler
         if ($data === 'lang_uz' || $data === 'lang_ru') {
             $lang = str_replace('lang_', '', $data);
             
-            // Tilni boshqa so'ramaymiz, qadamni asking_for_phone ga o'tkazamiz
+            // Tilni boshqa so'ramaymiz, qadamni main_menu ga o'tkazamiz
             $this->userService->setLanguage($user->telegram_id, $lang);
-            $this->userService->setStep($user->telegram_id, 'asking_for_phone');
+            $this->userService->setStep($user->telegram_id, 'main_menu');
 
             // Botning maqsadi matni
             $purposeUz = "🤝 **SahovatBot** - bu ortib qolgan yoki sizga kerak bo'lmagan, lekin boshqalar uchun asqotishi mumkin bo'lgan buyumlarni bepul ulashish yoki arzon narxda sotish uchun mo'ljallangan platforma.\n\nMaqsadimiz - isrofgarchilikning oldini olish va odamlarga o'zaro yordam berish imkonini yaratish.";
             $purposeRu = "🤝 **SahovatBot** - это платформа, предназначенная для бесплатного обмена или продажи по низкой цене вещей, которые вам больше не нужны, но могут пригодиться другим.\n\nНаша цель - предотвратить расточительство и создать возможность для взаимопомощи.";
             
             $purposeText = $lang == 'uz' ? $purposeUz : $purposeRu;
-            $text = $lang == 'uz' ? "Iltimos, ro'yxatdan o'tish uchun telefon raqamingizni yuboring." : "Пожалуйста, отправьте свой номер телефона для регистрации.";
-            $btnText = $lang == 'uz' ? "📞 Raqamni yuborish" : "📞 Отправить номер";
 
             // 1. Oldingi xabarni tahrirlab maqsadni yozamiz
             Telegram::editMessageText([
@@ -52,20 +50,8 @@ class CallbackHandler
                 'parse_mode' => 'Markdown'
             ]);
 
-            // 2. Yangi xabar bilan raqam so'raymiz
-            Telegram::sendMessage([
-                'chat_id' => $chatId,
-                'text' => $text,
-                'reply_markup' => json_encode([
-                    'keyboard' => [
-                        [
-                            ['text' => $btnText, 'request_contact' => true]
-                        ]
-                    ],
-                    'resize_keyboard' => true,
-                    'one_time_keyboard' => true
-                ])
-            ]);
+            // 2. Asosiy menyuni yuboramiz
+            $this->sendMainMenu($chatId, $lang);
         } elseif ($data === 'lang_change_uz' || $data === 'lang_change_ru') {
             $lang = str_replace('lang_change_', '', $data);
             $this->userService->setLanguage($user->telegram_id, $lang);
@@ -430,7 +416,6 @@ class CallbackHandler
             : ($lang == 'uz' ? 'Tekin 🎁' : 'Бесплатно 🎁');
 
         $caption  = "📍 <b>{$product->title}</b>\n";
-        // $caption .= "––––––––\n";
         $caption .= ($lang == 'uz' ? '💰 Narx: ' : '💰 Цена: ') . $price . "\n";
 
         if ($distanceKm !== null) {
@@ -444,12 +429,46 @@ class CallbackHandler
                 : "🗺 <a href='{$mapsUrl}'>Посмотреть на карте</a>") . "\n";
         }
 
-        $img = $product->images()->first();
+        // Contact link (Telegram Profile)
+        if ($product->user && $product->user->telegram_id) {
+            $contactUrl = "tg://user?id=" . $product->user->telegram_id;
+            $caption .= ($lang == 'uz'
+                ? "👤 <a href='{$contactUrl}'>Bog'lanish</a>"
+                : "👤 <a href='{$contactUrl}'>Связаться</a>") . "\n";
+        }
 
-        if ($img) {
+        $images = $product->images;
+
+        if ($images->count() > 1) {
+            // Send MediaGroup for multiple images
+            $media = [];
+            foreach ($images as $index => $img) {
+                $media[] = [
+                    'type' => 'photo',
+                    'media' => $img->file_id,
+                    'caption' => $index === 0 ? $caption : '',
+                    'parse_mode' => 'HTML',
+                ];
+            }
+
+            Telegram::sendMediaGroup([
+                'chat_id' => $chatId,
+                'media' => json_encode($media),
+            ]);
+
+            // MediaGroup doesn't support reply_markup, send keyboard separately if exists
+            if ($keyboard) {
+                Telegram::sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => $lang == 'uz' ? "Amallar:" : "Действия:",
+                    'reply_markup' => json_encode(['inline_keyboard' => $keyboard]),
+                ]);
+            }
+        } elseif ($images->count() === 1) {
+            // Single photo
             $params = [
                 'chat_id'    => $chatId,
-                'photo'      => $img->file_id,
+                'photo'      => $images->first()->file_id,
                 'caption'    => $caption,
                 'parse_mode' => 'HTML',
             ];
@@ -458,6 +477,7 @@ class CallbackHandler
             }
             Telegram::sendPhoto($params);
         } else {
+            // No photo
             $params = [
                 'chat_id'    => $chatId,
                 'text'       => $caption,

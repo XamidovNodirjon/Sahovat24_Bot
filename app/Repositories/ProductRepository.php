@@ -33,7 +33,8 @@ class ProductRepository
      */
     public function getUserProducts(int $userId)
     {
-        return Product::where('user_id', $userId)
+        return Product::with('images', 'user')
+            ->where('user_id', $userId)
             ->whereNotIn('status', ['draft'])
             ->latest()
             ->get();
@@ -44,7 +45,7 @@ class ProductRepository
      */
     public function getAllByCategory(int $categoryId, int $offset = 0, int $limit = 2)
     {
-        return Product::with('images')
+        return Product::with('images', 'user')
             ->where('category_id', $categoryId)
             ->where('status', 'approved')
             ->latest()
@@ -83,7 +84,7 @@ class ProductRepository
             sin(radians(latitude))
         ))";
 
-        return Product::with('images')
+        return Product::with('images', 'user')
             ->selectRaw("*, {$haversine} AS distance", [$lat, $lng, $lat])
             ->where('category_id', $categoryId)
             ->where('status', 'approved')
