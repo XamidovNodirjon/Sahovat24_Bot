@@ -450,15 +450,20 @@ class CallbackHandler
                 : "🗺 <a href='{$mapsUrl}'>Посмотреть на карте</a>") . "\n";
         }
 
-        // Contact link via Telegram profile
+        // Build contact inline button (more reliable than tg:// link in caption)
+        $contactKeyboard = [];
         if ($product->user && $product->user->telegram_id) {
-            $contactUrl = "tg://user?id=" . $product->user->telegram_id;
-            $caption .= ($lang == 'uz'
-                ? "👤 <a href='{$contactUrl}'>Bog'lanish</a>"
-                : "👤 <a href='{$contactUrl}'>Связаться</a>") . "\n";
+            $contactBtn = $lang == 'uz' ? "📞 Bog'lanish" : "📞 Связаться";
+            $contactKeyboard[] = [
+                ['text' => $contactBtn, 'url' => "tg://user?id=" . $product->user->telegram_id]
+            ];
         }
 
-        $images = $product->images;
+        // Merge contact row with any pagination/action keyboard
+        $fullKeyboard = array_merge($contactKeyboard, $keyboard ?? []);
+
+        // Use ->values() to ensure $index is always 0-based (not database ID)
+        $images = $product->images->values();
 
         if ($images->count() > 1) {
             // Build InputMedia array for MediaGroup (album)
@@ -468,6 +473,7 @@ class CallbackHandler
                     'type'  => 'photo',
                     'media' => $img->file_id,
                 ];
+                // index === 0 endi to'g'ri ishlaydi (values() tufayli)
                 if ($index === 0) {
                     $item['caption']    = $caption;
                     $item['parse_mode'] = 'HTML';
@@ -481,24 +487,24 @@ class CallbackHandler
                 'media'   => json_encode($media),
             ]);
 
-            // MediaGroup does not support reply_markup — send buttons separately
-            if ($keyboard) {
+            // MediaGroup does not support reply_markup — send buttons separately (contact + actions)
+            if (!empty($fullKeyboard)) {
                 Telegram::sendMessage([
                     'chat_id'      => $chatId,
-                    'text'         => $lang == 'uz' ? "Amallar:" : "Действия:",
-                    'reply_markup' => json_encode(['inline_keyboard' => $keyboard]),
+                    'text'         => $lang == 'uz' ? "📋 Amallar:" : "📋 Действия:",
+                    'reply_markup' => json_encode(['inline_keyboard' => $fullKeyboard]),
                 ]);
             }
         } elseif ($images->count() === 1) {
-            // Single photo
+            // Single photo — inline keyboard birga yuboriladi
             $params = [
                 'chat_id'    => $chatId,
                 'photo'      => $images->first()->file_id,
                 'caption'    => $caption,
                 'parse_mode' => 'HTML',
             ];
-            if ($keyboard) {
-                $params['reply_markup'] = json_encode(['inline_keyboard' => $keyboard]);
+            if (!empty($fullKeyboard)) {
+                $params['reply_markup'] = json_encode(['inline_keyboard' => $fullKeyboard]);
             }
             Telegram::sendPhoto($params);
         } else {
@@ -508,8 +514,8 @@ class CallbackHandler
                 'text'       => $caption,
                 'parse_mode' => 'HTML',
             ];
-            if ($keyboard) {
-                $params['reply_markup'] = json_encode(['inline_keyboard' => $keyboard]);
+            if (!empty($fullKeyboard)) {
+                $params['reply_markup'] = json_encode(['inline_keyboard' => $fullKeyboard]);
             }
             Telegram::sendMessage($params);
         }
