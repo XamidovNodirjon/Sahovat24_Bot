@@ -411,11 +411,14 @@ class CallbackHandler
 
     protected function sendProductCard($chatId, $product, string $lang, ?float $distanceKm = null, ?array $keyboard = null): void
     {
+        // Ensure images and user are always loaded regardless of how product was fetched
+        $product->loadMissing('images', 'user');
+
         $price = $product->price
             ? number_format($product->price, 0, '.', ' ') . ' so\'m'
             : ($lang == 'uz' ? 'Tekin 🎁' : 'Бесплатно 🎁');
 
-        $caption  = "📍 <b>{$product->title}</b>\n";
+        $caption  = "📌 <b>{$product->title}</b>\n";
         $caption .= ($lang == 'uz' ? '💰 Narx: ' : '💰 Цена: ') . $price . "\n";
 
         if ($distanceKm !== null) {
@@ -429,7 +432,7 @@ class CallbackHandler
                 : "🗺 <a href='{$mapsUrl}'>Посмотреть на карте</a>") . "\n";
         }
 
-        // Contact link (Telegram Profile)
+        // Contact link via Telegram profile
         if ($product->user && $product->user->telegram_id) {
             $contactUrl = "tg://user?id=" . $product->user->telegram_id;
             $caption .= ($lang == 'uz'
@@ -440,27 +443,31 @@ class CallbackHandler
         $images = $product->images;
 
         if ($images->count() > 1) {
-            // Send MediaGroup for multiple images
+            // Build InputMedia array for MediaGroup (album)
             $media = [];
             foreach ($images as $index => $img) {
-                $media[] = [
-                    'type' => 'photo',
+                $item = [
+                    'type'  => 'photo',
                     'media' => $img->file_id,
-                    'caption' => $index === 0 ? $caption : '',
-                    'parse_mode' => 'HTML',
                 ];
+                if ($index === 0) {
+                    $item['caption']    = $caption;
+                    $item['parse_mode'] = 'HTML';
+                }
+                $media[] = $item;
             }
 
+            // SDK expects a plain PHP array for 'media', NOT json_encode()
             Telegram::sendMediaGroup([
                 'chat_id' => $chatId,
-                'media' => json_encode($media),
+                'media'   => $media,
             ]);
 
-            // MediaGroup doesn't support reply_markup, send keyboard separately if exists
+            // MediaGroup does not support reply_markup — send buttons separately
             if ($keyboard) {
                 Telegram::sendMessage([
-                    'chat_id' => $chatId,
-                    'text' => $lang == 'uz' ? "Amallar:" : "Действия:",
+                    'chat_id'      => $chatId,
+                    'text'         => $lang == 'uz' ? "Amallar:" : "Действия:",
                     'reply_markup' => json_encode(['inline_keyboard' => $keyboard]),
                 ]);
             }
@@ -477,7 +484,7 @@ class CallbackHandler
             }
             Telegram::sendPhoto($params);
         } else {
-            // No photo
+            // No photo — text only
             $params = [
                 'chat_id'    => $chatId,
                 'text'       => $caption,

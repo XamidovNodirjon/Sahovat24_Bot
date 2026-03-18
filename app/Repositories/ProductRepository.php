@@ -11,7 +11,8 @@ class ProductRepository
      */
     public function findPendingDraftByUser(int $userId): ?Product
     {
-        return Product::where('user_id', $userId)
+        return Product::with('images', 'user')
+            ->where('user_id', $userId)
             ->where('status', 'draft') // Adding a temporary draft status before publishing
             ->latest()
             ->first();
